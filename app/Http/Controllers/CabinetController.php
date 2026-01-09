@@ -68,12 +68,15 @@ class CabinetController extends Controller
         // Передаем ID дефолтной книги для проверки возможности редактирования
         $defaultBookId = $defaultBook ? $defaultBook->id : null;
         
+        // Проверяем, является ли пользователь админом
+        $isAdmin = $user->isAdmin();
+        
         // Если это AJAX запрос, возвращаем только HTML таблицы
         if ($request->ajax()) {
-            return view('contacts-table', compact('contacts', 'defaultBookId'))->render();
+            return view('contacts-table', compact('contacts', 'defaultBookId', 'isAdmin'))->render();
         }
         
-        return view('index', compact('contacts', 'availableBooks', 'selectedBook', 'defaultBookId'));
+        return view('index', compact('contacts', 'availableBooks', 'selectedBook', 'defaultBookId', 'isAdmin'));
     }
 
     public function upload(Request $request)
@@ -467,8 +470,11 @@ class CabinetController extends Controller
      */
     public function destroy(Contact $contact)
     {
-        // Проверяем, что контакт принадлежит текущему пользователю
-        if ($contact->user_id !== auth()->id()) {
+        $user = auth()->user();
+        
+        // Админы могут удалять любые контакты
+        // Обычные пользователи могут удалять только свои контакты
+        if (!$user->isAdmin() && $contact->user_id !== $user->id) {
             abort(403, 'You do not have access to this contact');
         }
 

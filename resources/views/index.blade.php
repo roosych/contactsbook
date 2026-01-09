@@ -156,7 +156,7 @@
                 </div>
 
                 <div id="contacts-container">
-                    @include('contacts-table', ['contacts' => $contacts, 'defaultBookId' => $defaultBookId ?? null])
+                    @include('contacts-table', ['contacts' => $contacts, 'defaultBookId' => $defaultBookId ?? null, 'isAdmin' => $isAdmin ?? false])
                 </div>
             </div>
         </div>
@@ -361,6 +361,52 @@
                     console.error('Page load error:', error);
                     contactsContainer.classList.remove('search-loading');
                 });
+            }
+        });
+
+        // Handle contact deletion with confirmation
+        document.addEventListener('submit', function(e) {
+            const form = e.target.closest('.delete-contact-form');
+            if (form) {
+                e.preventDefault();
+                
+                const contactName = form.getAttribute('data-contact-name') || 'this contact';
+                
+                if (confirm(`Are you sure you want to delete "${contactName}"? This action cannot be undone.`)) {
+                    // Show loading state
+                    const submitBtn = form.querySelector('button[type="submit"]');
+                    const originalHTML = submitBtn.innerHTML;
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                    
+                    // Submit form
+                    fetch(form.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': form.querySelector('input[name="_token"]').value,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: new FormData(form)
+                    })
+                    .then(response => {
+                        if (response.redirected) {
+                            // If redirected, follow the redirect
+                            window.location.href = response.url;
+                        } else if (response.ok) {
+                            // Reload the page to show updated contacts
+                            window.location.reload();
+                        } else {
+                            return response.text().then(text => {
+                                throw new Error('Error deleting contact');
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        alert('Error: ' + error.message);
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalHTML;
+                    });
+                }
             }
         });
     </script>
