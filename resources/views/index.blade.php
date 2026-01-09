@@ -147,7 +147,7 @@
                     </div>
                     
                     <button type="button" 
-                            class="btn btn-sm btn-primary" 
+                            class="btn btn-sm btn-success" 
                             data-bs-toggle="modal" 
                             data-bs-target="#addContactModal">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
@@ -238,7 +238,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="submitContactBtn">
+                        <button type="submit" class="btn btn-success" id="submitContactBtn">
                             <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                             Add Contact
                         </button>

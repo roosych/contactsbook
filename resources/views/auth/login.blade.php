@@ -35,7 +35,7 @@
                             @enderror
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-100">Sign In</button>
+                        <button type="submit" class="btn btn-dark w-100">Sign In</button>
                     </form>
 
                 </div>

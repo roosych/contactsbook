@@ -67,7 +67,7 @@
                                     <div>
                                         <div class="d-flex justify-content-between align-items-center mb-3">
                                             <label class="form-label fw-bold mb-0 small">Books:</label>
-                                            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                                            <button type="submit" class="btn btn-dark btn-sm">Save</button>
                                         </div>
                                         <div class="border rounded p-3" style="max-height: 150px; overflow-y: auto;">
                                             <div class="books-list">
