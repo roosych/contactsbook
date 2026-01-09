@@ -194,15 +194,25 @@ class CabinetController extends Controller
                     if (isset($vcard->TEL)) {
                         foreach ($vcard->TEL as $tel) {
                             $phoneNumber = trim((string) $tel);
-                            // Очищаем номер от пробелов, дефисов, скобок и других символов
-                            $phoneNumber = preg_replace('/[\s\-\(\)\.]/', '', $phoneNumber);
+                            
                             // Удаляем префиксы типа tel:, TEL: и т.д.
                             $phoneNumber = preg_replace('/^tel:/i', '', $phoneNumber);
+                            
+                            // Очищаем номер от пробелов, дефисов, скобок, точек
+                            // Но сохраняем + для международных номеров
+                            $phoneNumber = preg_replace('/[\s\-\(\)\.]/', '', $phoneNumber);
+                            
                             if (!empty($phoneNumber)) {
-                                // Нормализуем номер в формат +994XXXXXXXXX
+                                // Нормализуем номер:
+                                // - Для Азербайджана: +994XXXXXXXXX
+                                // - Для других стран: международный формат с +
                                 $phoneNumber = $this->normalizePhoneNumber($phoneNumber);
+                                
                                 if (!empty($phoneNumber)) {
                                     $phones[] = $phoneNumber;
+                                } else {
+                                    // Логируем номера, которые не удалось нормализовать
+                                    \Log::warning('Не удалось нормализовать номер из VCF: ' . trim((string) $tel));
                                 }
                             }
                         }
@@ -285,7 +295,9 @@ class CabinetController extends Controller
     }
 
     /**
-     * Нормализует номер телефона в формат +994XXXXXXXXX
+     * Нормализует номер телефона
+     * Для номеров Азербайджана (+994) - в формат +994XXXXXXXXX
+     * Для номеров других стран - сохраняет международный формат с +
      *
      * @param string $phoneNumber Исходный номер телефона
      * @return string Нормализованный номер или пустая строка если не удалось нормализовать
@@ -295,7 +307,9 @@ class CabinetController extends Controller
         // Удаляем все нецифровые символы кроме +
         $cleaned = preg_replace('/[^\d+]/', '', $phoneNumber);
         
-        // Если номер начинается с +994
+        // ВАЖНО: Сначала проверяем номера с + (международные), чтобы не перепутать их с локальными
+        
+        // Если номер начинается с +994 (Азербайджан)
         if (str_starts_with($cleaned, '+994')) {
             $digits = substr($cleaned, 4); // Убираем +994
             // Берем первые 9 цифр (для мобильных номеров Азербайджана)
@@ -304,7 +318,21 @@ class CabinetController extends Controller
             }
         }
         
-        // Если номер начинается с 994 (без +)
+        // Если номер начинается с + и имеет другой код страны (не 994)
+        // ЭТО ДОЛЖНО БЫТЬ ПЕРЕД проверками локальных форматов!
+        if (str_starts_with($cleaned, '+')) {
+            // Убираем все символы кроме цифр и +
+            $normalized = preg_replace('/[^\d+]/', '', $phoneNumber);
+            // Проверяем, что есть хотя бы 7 цифр после + (минимальная длина международного номера)
+            $digitsOnly = str_replace('+', '', $normalized);
+            if (strlen($digitsOnly) >= 7 && strlen($digitsOnly) <= 15) {
+                return $normalized;
+            }
+        }
+        
+        // Теперь проверяем локальные форматы Азербайджана (без +)
+        
+        // Если номер начинается с 994 (без +) - Азербайджан
         if (str_starts_with($cleaned, '994')) {
             $digits = substr($cleaned, 3);
             // Берем первые 9 цифр
@@ -322,19 +350,112 @@ class CabinetController extends Controller
             }
         }
         
-        // Если номер состоит только из 9 цифр (без префикса)
+        // Если номер состоит только из 9 цифр (без префикса) - считаем Азербайджан
         if (preg_match('/^(\d{9})$/', $cleaned, $matches)) {
             return '+994' . $matches[1];
         }
         
-        // Если номер содержит 10 цифр и начинается не с 0, но может быть без префикса
-        // Пытаемся извлечь последние 9 цифр
-        if (preg_match('/(\d{9})$/', $cleaned, $matches)) {
-            return '+994' . $matches[1];
+        // Если номер начинается без +, но содержит код страны
+        // Пытаемся определить международный формат
+        $digitsOnly = preg_replace('/\D/', '', $phoneNumber);
+        
+        // Если номер длинный (10+ цифр), вероятно это международный номер без +
+        // Добавляем + в начало
+        if (strlen($digitsOnly) >= 10 && strlen($digitsOnly) <= 15) {
+            return '+' . $digitsOnly;
+        }
+        
+        // Если номер средний длины (7-9 цифр), может быть локальным или международным
+        // Для безопасности добавляем + только если номер явно не похож на локальный формат Азербайджана
+        if (strlen($digitsOnly) >= 7 && strlen($digitsOnly) <= 9) {
+            // Если не начинается с 0 и не 9 цифр - вероятно международный
+            if (!str_starts_with($digitsOnly, '0') && strlen($digitsOnly) != 9) {
+                return '+' . $digitsOnly;
+            }
         }
         
         // Если ничего не подошло, возвращаем пустую строку
         return '';
+    }
+
+    /**
+     * Создает новый контакт
+     */
+    public function store(Request $request)
+    {
+        $user = auth()->user();
+        
+        // Получаем дефолтную книгу пользователя
+        $defaultBook = $user->getDefaultContactBook();
+        
+        if (!$defaultBook) {
+            return back()->withErrors(['error' => 'Unable to determine contact book. Please contact the administrator.']);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'phone1' => 'required|string|max:20',
+            'phone2' => 'nullable|string|max:20',
+        ]);
+
+        // Нормализуем номера телефонов
+        $phone1 = $this->normalizePhoneNumber($validated['phone1']);
+        if (empty($phone1)) {
+            return back()->withErrors(['phone1' => 'Invalid phone number format. Please enter a valid international phone number (e.g., +994XXXXXXXXX or +1234567890)']);
+        }
+
+        $phone2 = null;
+        if (!empty($validated['phone2'])) {
+            $phone2 = $this->normalizePhoneNumber($validated['phone2']);
+            if (empty($phone2)) {
+                return back()->withErrors(['phone2' => 'Invalid phone number format. Please enter a valid international phone number (e.g., +994XXXXXXXXX or +1234567890)']);
+            }
+        }
+
+        // Если два номера одинаковые, оставляем только один
+        if ($phone2 && $phone1 === $phone2) {
+            $phone2 = null;
+        }
+
+        // Проверяем дубликаты номеров в книге отдела
+        $bookId = $defaultBook->id;
+
+        // Проверяем phone1
+        $duplicateQuery = Contact::where('contact_book_id', $bookId)
+            ->where(function($query) use ($phone1) {
+                $query->where('phone1', $phone1)
+                      ->orWhere('phone2', $phone1);
+            })
+            ->first();
+
+        if ($duplicateQuery) {
+            return back()->withErrors(['phone1' => 'A contact with this number already exists in this book']);
+        }
+
+        // Проверяем phone2, если он есть
+        if ($phone2) {
+            $duplicateQuery = Contact::where('contact_book_id', $bookId)
+                ->where(function($query) use ($phone2) {
+                    $query->where('phone1', $phone2)
+                          ->orWhere('phone2', $phone2);
+                })
+                ->first();
+
+            if ($duplicateQuery) {
+                return back()->withErrors(['phone2' => 'A contact with this number already exists in this book']);
+            }
+        }
+
+        // Создаем новый контакт
+        Contact::create([
+            'name' => $validated['name'],
+            'phone1' => $phone1,
+            'phone2' => $phone2,
+            'user_id' => $user->id,
+            'contact_book_id' => $bookId,
+        ]);
+
+        return redirect()->route('cabinet.index', ['book_id' => $bookId])->with('success', 'Contact created successfully');
     }
 
     /**

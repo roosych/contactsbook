@@ -14,6 +14,7 @@ Route::post('login',    [AuthController::class, 'doLogin'])->name('do-login');
 Route::middleware('auth:web')->group(function () {
     Route::get('cabinet', [CabinetController::class, 'index'])->name('cabinet.index');
     Route::post('cabinet/upload', [CabinetController::class, 'upload'])->name('cabinet.upload');
+    Route::post('cabinet/contacts', [CabinetController::class, 'store'])->name('cabinet.contacts.store');
     Route::get('cabinet/contacts/{contact}/edit', [CabinetController::class, 'edit'])->name('cabinet.contacts.edit');
     Route::put('cabinet/contacts/{contact}', [CabinetController::class, 'update'])->name('cabinet.contacts.update');
     Route::delete('cabinet/contacts/{contact}', [CabinetController::class, 'destroy'])->name('cabinet.contacts.destroy');

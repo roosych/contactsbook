@@ -146,6 +146,19 @@
                         @endif
                     </div>
                     
+                    <button type="button" 
+                            class="btn btn-sm btn-primary" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#addContactModal">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                        </svg>
+                        Add Contact
+                    </button>
+                </div>
+                
+                <div class="mb-3">
                     <div style="max-width: 300px; width: 100%;">
                         <input type="text"
                                id="search-input"
@@ -162,8 +175,90 @@
         </div>
     </div>
 
+    <!-- Add Contact Modal -->
+    <div class="modal fade" id="addContactModal" tabindex="-1" aria-labelledby="addContactModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addContactModalLabel">Add New Contact</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="addContactForm" action="{{ route('cabinet.contacts.store') }}" method="POST">
+                    @csrf
+                    <div class="modal-body">
+                        @if($errors->any())
+                            <div class="alert alert-danger">
+                                <ul class="mb-0">
+                                    @foreach($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+
+                        <div class="mb-3">
+                            <label for="contact_name" class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                            <input type="text" 
+                                   class="form-control @error('name') is-invalid @enderror" 
+                                   id="contact_name" 
+                                   name="name" 
+                                   value="{{ old('name') }}"
+                                   required>
+                            @error('name')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="contact_phone1" class="form-label fw-semibold">Phone 1 <span class="text-danger">*</span></label>
+                            <input type="text" 
+                                   class="form-control @error('phone1') is-invalid @enderror" 
+                                   id="contact_phone1" 
+                                   name="phone1" 
+                                   value="{{ old('phone1') }}"
+                                   placeholder="+994XXXXXXXXX or +1234567890"
+                                   required>
+                            @error('phone1')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="contact_phone2" class="form-label fw-semibold">Phone 2</label>
+                            <input type="text" 
+                                   class="form-control @error('phone2') is-invalid @enderror" 
+                                   id="contact_phone2" 
+                                   name="phone2" 
+                                   value="{{ old('phone2') }}"
+                                   placeholder="+994XXXXXXXXX or +1234567890">
+                            @error('phone2')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="submitContactBtn">
+                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            Add Contact
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/inputmask@5.0.8/dist/inputmask.min.js"></script>
     <script>
+        // Open modal if there are validation errors
+        @if($errors->any() && old('_token'))
+            document.addEventListener('DOMContentLoaded', function() {
+                const modal = new bootstrap.Modal(document.getElementById('addContactModal'));
+                modal.show();
+            });
+        @endif
+
         // Handle upload form submission
         document.getElementById('uploadForm').addEventListener('submit', function(e) {
             const uploadBtn = document.getElementById('uploadBtn');
@@ -409,6 +504,189 @@
                 }
             }
         });
+
+        // Initialize input masks for phone numbers in modal
+        const addContactModal = document.getElementById('addContactModal');
+        if (addContactModal) {
+            addContactModal.addEventListener('shown.bs.modal', function() {
+                const phone1Input = document.getElementById('contact_phone1');
+                const phone2Input = document.getElementById('contact_phone2');
+                
+                // Function to format phone input for international numbers
+                function formatPhoneInput(input) {
+                    if (!input) return;
+                    
+                    // Handle input event - allow international format
+                    input.addEventListener('input', function(e) {
+                        let value = this.value;
+                        const caretPos = this.selectionStart;
+                        
+                        // Remove all characters except digits and +
+                        let cleaned = value.replace(/[^\d+]/g, '');
+                        
+                        // Ensure it starts with +
+                        if (!cleaned.startsWith('+')) {
+                            // If user is typing digits, add + at the beginning
+                            if (cleaned.length > 0) {
+                                cleaned = '+' + cleaned;
+                            } else {
+                                cleaned = '+';
+                            }
+                        }
+                        
+                        // Limit to 16 characters total (1 for + and up to 15 digits for international format)
+                        if (cleaned.length > 16) {
+                            cleaned = cleaned.substring(0, 16);
+                        }
+                        
+                        this.value = cleaned;
+                        
+                        // Restore cursor position
+                        const newCaretPos = Math.min(caretPos, this.value.length);
+                        this.setSelectionRange(newCaretPos, newCaretPos);
+                    });
+                    
+                    // Prevent deletion of + at the beginning
+                    input.addEventListener('keydown', function(e) {
+                        const caretPos = this.selectionStart;
+                        if (caretPos === 1 && (e.key === 'Backspace' || e.key === 'Delete')) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                    
+                    // Handle paste - clean and format
+                    input.addEventListener('paste', function(e) {
+                        e.preventDefault();
+                        const pasted = (e.clipboardData || window.clipboardData).getData('text');
+                        
+                        // Remove all characters except digits and +
+                        let cleaned = pasted.replace(/[^\d+]/g, '');
+                        
+                        // Ensure it starts with +
+                        if (!cleaned.startsWith('+')) {
+                            if (cleaned.length > 0) {
+                                cleaned = '+' + cleaned;
+                            } else {
+                                cleaned = '+';
+                            }
+                        }
+                        
+                        // Limit to 16 characters
+                        if (cleaned.length > 16) {
+                            cleaned = cleaned.substring(0, 16);
+                        }
+                        
+                        this.value = cleaned;
+                    });
+                }
+                
+                // Apply formatting to both inputs
+                formatPhoneInput(phone1Input);
+                formatPhoneInput(phone2Input);
+            });
+
+            // Clear form when modal is hidden
+            addContactModal.addEventListener('hidden.bs.modal', function() {
+                const form = document.getElementById('addContactForm');
+                if (form) {
+                    form.reset();
+                    // Remove validation classes
+                    form.querySelectorAll('.is-invalid').forEach(el => {
+                        el.classList.remove('is-invalid');
+                    });
+                    // Hide error alert if exists
+                    const errorAlert = form.querySelector('.alert-danger');
+                    if (errorAlert) {
+                        errorAlert.remove();
+                    }
+                }
+            });
+        }
+
+        // Handle add contact form submission
+        const addContactForm = document.getElementById('addContactForm');
+        if (addContactForm) {
+            addContactForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const submitBtn = document.getElementById('submitContactBtn');
+                const spinner = submitBtn.querySelector('.spinner-border');
+                const originalText = submitBtn.innerHTML;
+                
+                // Show loading state
+                submitBtn.disabled = true;
+                spinner.classList.remove('d-none');
+                
+                // Get form data
+                const formData = new FormData(this);
+                
+                // Phone values will be normalized on server side
+                // Just ensure phone2 is removed if empty
+                const phone2Input = document.getElementById('contact_phone2');
+                if (!phone2Input || !phone2Input.value.trim()) {
+                    formData.delete('phone2');
+                }
+                
+                // Submit form
+                fetch(this.action, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'text/html',
+                    },
+                    body: formData
+                })
+                .then(response => {
+                    if (response.redirected) {
+                        // Success - redirect
+                        window.location.href = response.url;
+                    } else if (response.ok) {
+                        return response.text();
+                    } else {
+                        return response.text().then(html => {
+                            // Parse HTML to extract errors
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(html, 'text/html');
+                            const errorAlert = doc.querySelector('.alert-danger');
+                            
+                            if (errorAlert) {
+                                // Show errors in modal
+                                const modalBody = addContactForm.querySelector('.modal-body');
+                                const existingAlert = modalBody.querySelector('.alert-danger');
+                                if (existingAlert) {
+                                    existingAlert.remove();
+                                }
+                                modalBody.insertBefore(errorAlert.cloneNode(true), modalBody.firstChild);
+                                
+                                // Mark invalid fields
+                                const invalidFields = doc.querySelectorAll('.is-invalid');
+                                invalidFields.forEach(invalidField => {
+                                    const fieldName = invalidField.getAttribute('name') || invalidField.id;
+                                    const formField = addContactForm.querySelector(`[name="${fieldName}"], #${fieldName}`);
+                                    if (formField) {
+                                        formField.classList.add('is-invalid');
+                                        const feedback = invalidField.nextElementSibling;
+                                        if (feedback && feedback.classList.contains('invalid-feedback')) {
+                                            if (!formField.nextElementSibling || !formField.nextElementSibling.classList.contains('invalid-feedback')) {
+                                                formField.insertAdjacentElement('afterend', feedback.cloneNode(true));
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            throw new Error('Validation failed');
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    submitBtn.disabled = false;
+                    spinner.classList.add('d-none');
+                });
+            });
+        }
     </script>
 </body>
 </html>

@@ -80,7 +80,7 @@
                                id="phone1" 
                                name="phone1" 
                                value="{{ old('phone1', $contact->phone1) }}"
-                               placeholder="+994XXXXXXXXX">
+                               placeholder="+994XXXXXXXXX or +1234567890">
                         @error('phone1')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -93,7 +93,7 @@
                                id="phone2" 
                                name="phone2" 
                                value="{{ old('phone2', $contact->phone2) }}"
-                               placeholder="+994XXXXXXXXX">
+                               placeholder="+994XXXXXXXXX or +1234567890">
                         @error('phone2')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -112,36 +112,78 @@
     <script src="https://cdn.jsdelivr.net/npm/inputmask@5.0.8/dist/inputmask.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Apply mask to phone fields: +994XXXXXXXXX (where X is a digit)
-            // Mask format: +994 and 9 digits without spaces
-            const phoneMaskOptions = {
-                mask: '+994999999999',
-                placeholder: '+994XXXXXXXXX',
-                showMaskOnHover: false,
-                showMaskOnFocus: true,
-                clearMaskOnLostFocus: false,
-                removeMaskOnSubmit: true,
-                greedy: false,
-                // Define custom character for digits
-                definitions: {
-                    '9': {
-                        validator: '[0-9]',
-                        cardinality: 1
+            // Function to format phone input for international numbers
+            function formatPhoneInput(input) {
+                if (!input) return;
+                
+                // Handle input event - allow international format
+                input.addEventListener('input', function(e) {
+                    let value = this.value;
+                    const caretPos = this.selectionStart;
+                    
+                    // Remove all characters except digits and +
+                    let cleaned = value.replace(/[^\d+]/g, '');
+                    
+                    // Ensure it starts with +
+                    if (!cleaned.startsWith('+')) {
+                        // If user is typing digits, add + at the beginning
+                        if (cleaned.length > 0) {
+                            cleaned = '+' + cleaned;
+                        } else {
+                            cleaned = '+';
+                        }
                     }
-                }
-            };
-            
-            // Phone Number 1
-            const phone1Input = document.getElementById('phone1');
-            if (phone1Input) {
-                Inputmask(phoneMaskOptions).mask(phone1Input);
+                    
+                    // Limit to 16 characters total (1 for + and up to 15 digits for international format)
+                    if (cleaned.length > 16) {
+                        cleaned = cleaned.substring(0, 16);
+                    }
+                    
+                    this.value = cleaned;
+                    
+                    // Restore cursor position
+                    const newCaretPos = Math.min(caretPos, this.value.length);
+                    this.setSelectionRange(newCaretPos, newCaretPos);
+                });
+                
+                // Prevent deletion of + at the beginning
+                input.addEventListener('keydown', function(e) {
+                    const caretPos = this.selectionStart;
+                    if (caretPos === 1 && (e.key === 'Backspace' || e.key === 'Delete')) {
+                        e.preventDefault();
+                        return false;
+                    }
+                });
+                
+                // Handle paste - clean and format
+                input.addEventListener('paste', function(e) {
+                    e.preventDefault();
+                    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+                    
+                    // Remove all characters except digits and +
+                    let cleaned = pasted.replace(/[^\d+]/g, '');
+                    
+                    // Ensure it starts with +
+                    if (!cleaned.startsWith('+')) {
+                        if (cleaned.length > 0) {
+                            cleaned = '+' + cleaned;
+                        } else {
+                            cleaned = '+';
+                        }
+                    }
+                    
+                    // Limit to 16 characters
+                    if (cleaned.length > 16) {
+                        cleaned = cleaned.substring(0, 16);
+                    }
+                    
+                    this.value = cleaned;
+                });
             }
             
-            // Phone Number 2
-            const phone2Input = document.getElementById('phone2');
-            if (phone2Input) {
-                Inputmask(phoneMaskOptions).mask(phone2Input);
-            }
+            // Apply formatting to both inputs
+            formatPhoneInput(document.getElementById('phone1'));
+            formatPhoneInput(document.getElementById('phone2'));
         });
     </script>
 </body>
