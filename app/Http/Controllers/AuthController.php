@@ -13,6 +13,10 @@ class AuthController extends Controller
     // Регистрация
     public function login(Request $request)
     {
+        if (Auth::check()) {
+            return redirect()->route('cabinet.index');
+        }
+        
         return view('auth.login');
     }
 
