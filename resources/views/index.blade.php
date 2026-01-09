@@ -90,7 +90,7 @@
                             </div>
                         </div>
                         
-                        <button type="submit" id="uploadBtn" class="btn btn-dark" disabled style="white-space: nowrap;">
+                        <button type="submit" id="uploadBtn" class="btn btn-dark d-none" disabled style="white-space: nowrap;">
                             <span id="uploadBtnText">Upload</span>
                             <span id="uploadBtnSpinner" class="spinner-border spinner-border-sm d-none ms-2" role="status" aria-hidden="true"></span>
                         </button>
@@ -201,10 +201,12 @@
                 }
                 uploadArea.classList.add('bg-light', 'border-primary');
                 
-                // Enable upload button
+                // Show and enable upload button
+                uploadBtn.classList.remove('d-none');
                 uploadBtn.disabled = false;
             } else {
-                // If file is not selected, disable button
+                // If file is not selected, hide and disable button
+                uploadBtn.classList.add('d-none');
                 uploadBtn.disabled = true;
             }
         }
