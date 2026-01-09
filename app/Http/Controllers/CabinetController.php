@@ -209,62 +209,65 @@ class CabinetController extends Controller
                     $phones = array_unique($phones);
                     $phones = array_values($phones); // Переиндексируем массив
                     
-                    // Сохраняем контакт только если есть имя или хотя бы один телефон
-                    if (!empty($name) || !empty($phones)) {
-                        // Проверяем дубликаты номеров для текущего пользователя
-                        $phone1 = $phones[0] ?? null;
-                        $phone2 = $phones[1] ?? null;
-                        
-                        // Проверяем phone1 (проверяем в рамках текущей книги)
-                        if ($phone1) {
-                            $existingContact = Contact::where('contact_book_id', $contactBookId)
-                                ->where(function($query) use ($phone1) {
-                                    $query->where('phone1', $phone1)
-                                          ->orWhere('phone2', $phone1);
-                                })
-                                ->first();
-                            
-                            if ($existingContact) {
-                                // Обновляем имя, если оно было пустым или если новое имя не пустое
-                                if (empty($existingContact->name) && !empty($name)) {
-                                    $existingContact->update(['name' => $name]);
-                                }
-                                // Если phone2 пустой, а у нового контакта есть phone2, обновляем
-                                if (empty($existingContact->phone2) && $phone2) {
-                                    $existingContact->update(['phone2' => $phone2]);
-                                }
-                                continue; // Пропускаем создание дубликата
-                            }
-                        }
-                        
-                        // Проверяем phone2, если phone1 не нашелся
-                        if ($phone2 && !$phone1) {
-                            $existingContact = Contact::where('contact_book_id', $contactBookId)
-                                ->where(function($query) use ($phone2) {
-                                    $query->where('phone1', $phone2)
-                                          ->orWhere('phone2', $phone2);
-                                })
-                                ->first();
-                            
-                            if ($existingContact) {
-                                if (empty($existingContact->name) && !empty($name)) {
-                                    $existingContact->update(['name' => $name]);
-                                }
-                                continue;
-                            }
-                        }
-                        
-                        // Создаем новый контакт, если дубликатов нет
-                        Contact::create([
-                            'name' => !empty($name) ? $name : null,
-                            'phone1' => $phone1,
-                            'phone2' => $phone2,
-                            'user_id' => $userId,
-                            'contact_book_id' => $contactBookId,
-                        ]);
-                        
-                        $contactsCount++;
+                    // Сохраняем контакт только если есть имя И хотя бы один телефон
+                    // Если имя не указано ИЛИ не указаны номера - пропускаем контакт
+                    if (empty($name) || empty($phones)) {
+                        continue;
                     }
+                    
+                    // Проверяем дубликаты номеров для текущего пользователя
+                    $phone1 = $phones[0] ?? null;
+                    $phone2 = $phones[1] ?? null;
+                    
+                    // Проверяем phone1 (проверяем в рамках текущей книги)
+                    if ($phone1) {
+                        $existingContact = Contact::where('contact_book_id', $contactBookId)
+                            ->where(function($query) use ($phone1) {
+                                $query->where('phone1', $phone1)
+                                      ->orWhere('phone2', $phone1);
+                            })
+                            ->first();
+                        
+                        if ($existingContact) {
+                            // Обновляем имя, если оно было пустым или если новое имя не пустое
+                            if (empty($existingContact->name) && !empty($name)) {
+                                $existingContact->update(['name' => $name]);
+                            }
+                            // Если phone2 пустой, а у нового контакта есть phone2, обновляем
+                            if (empty($existingContact->phone2) && $phone2) {
+                                $existingContact->update(['phone2' => $phone2]);
+                            }
+                            continue; // Пропускаем создание дубликата
+                        }
+                    }
+                    
+                    // Проверяем phone2, если phone1 не нашелся
+                    if ($phone2 && !$phone1) {
+                        $existingContact = Contact::where('contact_book_id', $contactBookId)
+                            ->where(function($query) use ($phone2) {
+                                $query->where('phone1', $phone2)
+                                      ->orWhere('phone2', $phone2);
+                            })
+                            ->first();
+                        
+                        if ($existingContact) {
+                            if (empty($existingContact->name) && !empty($name)) {
+                                $existingContact->update(['name' => $name]);
+                            }
+                            continue;
+                        }
+                    }
+                        
+                    // Создаем новый контакт, если дубликатов нет
+                    Contact::create([
+                        'name' => !empty($name) ? $name : null,
+                        'phone1' => $phone1,
+                        'phone2' => $phone2,
+                        'user_id' => $userId,
+                        'contact_book_id' => $contactBookId,
+                    ]);
+                    
+                    $contactsCount++;
                 } catch (\Exception $e) {
                     // Пропускаем некорректные контакты и продолжаем обработку
                     \Log::warning('Ошибка при парсинге контакта из VCF: ' . $e->getMessage());
