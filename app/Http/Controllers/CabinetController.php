@@ -189,6 +189,52 @@ class CabinetController extends Controller
                         $name = implode(' ', array_filter($nameParts));
                     }
                     
+                    // Извлекаем организацию
+                    $organization = null;
+                    if (isset($vcard->ORG)) {
+                        try {
+                            $org = $vcard->ORG;
+                            // В sabre/vobject ORG - это объект Property
+                            // ORG структурированное поле: ORG:Company;Department;Unit
+                            // Используем getParts() для получения структурированных частей
+                            if (is_object($org) && method_exists($org, 'getParts')) {
+                                $orgParts = $org->getParts();
+                                // Берем первую часть (название компании)
+                                if (!empty($orgParts) && !empty($orgParts[0])) {
+                                    $organization = trim((string) $orgParts[0]);
+                                }
+                            }
+                            // Если getParts() не сработал, пробуем getValue()
+                            if (empty($organization) && is_object($org) && method_exists($org, 'getValue')) {
+                                $orgValue = $org->getValue();
+                                if (is_array($orgValue)) {
+                                    $organization = !empty($orgValue[0]) ? trim((string) $orgValue[0]) : null;
+                                } else {
+                                    $organization = trim((string) $orgValue);
+                                }
+                            }
+                            // Если все еще пусто, пробуем просто привести к строке
+                            if (empty($organization)) {
+                                $orgString = (string) $org;
+                                // Если строка содержит точку с запятой, берем первую часть
+                                if (strpos($orgString, ';') !== false) {
+                                    $parts = explode(';', $orgString);
+                                    $organization = trim($parts[0]);
+                                } else {
+                                    $organization = trim($orgString);
+                                }
+                            }
+                            // Если организация пустая после trim, устанавливаем null
+                            if (empty($organization)) {
+                                $organization = null;
+                            }
+                        } catch (\Exception $e) {
+                            // Если ошибка при извлечении организации, просто пропускаем
+                            $organization = null;
+                            \Log::warning('Ошибка при извлечении организации из VCF: ' . $e->getMessage());
+                        }
+                    }
+                    
                     // Извлекаем телефоны
                     $phones = [];
                     if (isset($vcard->TEL)) {
@@ -246,6 +292,10 @@ class CabinetController extends Controller
                             if (empty($existingContact->name) && !empty($name)) {
                                 $existingContact->update(['name' => $name]);
                             }
+                            // Обновляем организацию, если она была пустой, а у нового контакта есть организация
+                            if (empty($existingContact->organization) && !empty($organization)) {
+                                $existingContact->update(['organization' => $organization]);
+                            }
                             // Если phone2 пустой, а у нового контакта есть phone2, обновляем
                             if (empty($existingContact->phone2) && $phone2) {
                                 $existingContact->update(['phone2' => $phone2]);
@@ -267,18 +317,51 @@ class CabinetController extends Controller
                             if (empty($existingContact->name) && !empty($name)) {
                                 $existingContact->update(['name' => $name]);
                             }
+                            // Обновляем организацию, если она была пустой, а у нового контакта есть организация
+                            if (empty($existingContact->organization) && !empty($organization)) {
+                                $existingContact->update(['organization' => $organization]);
+                            }
                             continue;
                         }
                     }
                         
                     // Создаем новый контакт, если дубликатов нет
-                    Contact::create([
+                    // Убеждаемся, что organization не попадает в phone1
+                    $contactData = [
                         'name' => !empty($name) ? $name : null,
+                        'organization' => $organization,
                         'phone1' => $phone1,
                         'phone2' => $phone2,
                         'user_id' => $userId,
                         'contact_book_id' => $contactBookId,
-                    ]);
+                    ];
+                    
+                    // Проверка: если organization не пустая и похожа на телефонный номер, это ошибка
+                    // (организация не должна быть телефонным номером)
+                    if (!empty($organization)) {
+                        // Проверяем, не является ли organization телефонным номером
+                        $orgCleaned = preg_replace('/[^\d+]/', '', $organization);
+                        // Если organization содержит только цифры и +, это может быть ошибка
+                        if (preg_match('/^\+?\d{7,15}$/', $orgCleaned)) {
+                            \Log::warning('Организация похожа на телефонный номер, пропускаем', [
+                                'organization' => $organization,
+                                'name' => $name
+                            ]);
+                            $contactData['organization'] = null;
+                        }
+                        // Если organization совпадает с phone1 или phone2, это ошибка
+                        if ($organization === $phone1 || $organization === $phone2) {
+                            \Log::error('Ошибка: организация совпадает с телефоном', [
+                                'organization' => $organization,
+                                'phone1' => $phone1,
+                                'phone2' => $phone2,
+                                'name' => $name
+                            ]);
+                            $contactData['organization'] = null;
+                        }
+                    }
+                    
+                    Contact::create($contactData);
                     
                     $contactsCount++;
                 } catch (\Exception $e) {
@@ -394,6 +477,7 @@ class CabinetController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'organization' => 'nullable|string|max:255',
             'phone1' => 'required|string|max:20',
             'phone2' => 'nullable|string|max:20',
         ]);
@@ -449,6 +533,7 @@ class CabinetController extends Controller
         // Создаем новый контакт
         Contact::create([
             'name' => $validated['name'],
+            'organization' => $validated['organization'] ?? null,
             'phone1' => $phone1,
             'phone2' => $phone2,
             'user_id' => $user->id,
@@ -522,6 +607,7 @@ class CabinetController extends Controller
 
         $validated = $request->validate([
             'name' => 'nullable|string|max:255',
+            'organization' => 'nullable|string|max:255',
             'phone1' => 'nullable|string|max:20',
             'phone2' => 'nullable|string|max:20',
         ]);

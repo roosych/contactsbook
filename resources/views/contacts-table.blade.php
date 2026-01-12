@@ -5,6 +5,7 @@
             <thead>
                 <tr>
                     <th>Name</th>
+                    <th>Organization</th>
                     <th>Phone Number</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -13,6 +14,7 @@
                 @foreach($contacts as $contact)
                     <tr>
                         <td>{{ $contact->name ?? '-' }}</td>
+                        <td>{{ $contact->organization ?? '-' }}</td>
                         <td>
                             @if($contact->phone1)
                                 <div>

@@ -74,6 +74,19 @@
                     </div>
 
                     <div class="mb-3">
+                        <label for="organization" class="form-label fw-semibold">Organization</label>
+                        <input type="text" 
+                               class="form-control @error('organization') is-invalid @enderror" 
+                               id="organization" 
+                               name="organization" 
+                               value="{{ old('organization', $contact->organization) }}"
+                               placeholder="Enter organization name">
+                        @error('organization')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
+
+                    <div class="mb-3">
                         <label for="phone1" class="form-label fw-semibold">Phone Number 1</label>
                         <input type="text" 
                                class="form-control @error('phone1') is-invalid @enderror" 

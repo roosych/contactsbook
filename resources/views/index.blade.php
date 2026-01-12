@@ -21,7 +21,7 @@
         <!-- User Information -->
         <div class="card shadow-sm mb-3">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h5 class="mb-1 fw-bold">{{ auth()->user()->name }}</h5>
                         <p class="mb-0 text-muted small">{{ auth()->user()->email }}</p>
@@ -50,7 +50,7 @@
         <div class="card shadow-sm mb-3">
             <div class="card-body">
                 <h5 class="card-title mb-3 pb-2 border-bottom">Upload VCF File</h5>
-
+            
             @if(session('success'))
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     {{ session('success') }}
@@ -75,9 +75,9 @@
                 </div>
             @endif
 
-                <form action="{{ route('cabinet.upload') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
-                    @csrf
-                    
+            <form action="{{ route('cabinet.upload') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
+                @csrf
+                
                     <div class="d-flex gap-2 align-items-center">
                         <div class="border border-2 border-dashed rounded p-2 flex-grow-1 d-flex align-items-center" 
                              style="cursor: pointer; min-height: 48px;"
@@ -94,16 +94,16 @@
                             <span id="uploadBtnText">Upload</span>
                             <span id="uploadBtnSpinner" class="spinner-border spinner-border-sm d-none ms-2" role="status" aria-hidden="true"></span>
                         </button>
-                    </div>
-                    
-                    <input type="file" 
-                           name="vcf_file" 
-                           id="vcf_file" 
-                           class="d-none" 
-                           accept=".vcf"
-                           required
-                           onchange="handleFileSelect(this)">
-                    
+                </div>
+                
+                <input type="file" 
+                       name="vcf_file" 
+                       id="vcf_file" 
+                       class="d-none" 
+                       accept=".vcf"
+                       required
+                       onchange="handleFileSelect(this)">
+                
                     <div id="fileName" class="mt-2 p-2 bg-light rounded small" style="display: none;">
                         <p id="fileNameText" class="mb-0 fw-medium"></p>
                     </div>
@@ -144,8 +144,8 @@
                         @elseif(isset($selectedBook))
                             <span class="badge bg-secondary">{{ $selectedBook->name }}</span>
                         @endif
-                    </div>
-                    
+                </div>
+
                     <button type="button" 
                             class="btn btn-sm btn-success" 
                             data-bs-toggle="modal" 
@@ -210,6 +210,19 @@
                         </div>
 
                         <div class="mb-3">
+                            <label for="contact_organization" class="form-label fw-semibold">Organization</label>
+                            <input type="text" 
+                                   class="form-control @error('organization') is-invalid @enderror" 
+                                   id="contact_organization" 
+                                   name="organization" 
+                                   value="{{ old('organization') }}"
+                                   placeholder="Enter organization name">
+                            @error('organization')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
                             <label for="contact_phone1" class="form-label fw-semibold">Phone 1 <span class="text-danger">*</span></label>
                             <input type="text" 
                                    class="form-control @error('phone1') is-invalid @enderror" 
@@ -241,9 +254,9 @@
                         <button type="submit" class="btn btn-success" id="submitContactBtn">
                             <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                             Add Contact
-                        </button>
-                    </div>
-                </form>
+                    </button>
+                </div>
+            </form>
             </div>
         </div>
     </div>
@@ -285,7 +298,7 @@
                 const fileName = input.files[0].name;
                 document.getElementById('fileNameText').textContent = fileName;
                 document.getElementById('fileName').style.display = 'block';
-
+                
                 // Update upload area
                 const uploadArea = document.getElementById('uploadArea');
                 const uploadTitle = document.getElementById('uploadTitle');
@@ -308,7 +321,7 @@
 
         // Handle drag and drop
         const uploadArea = document.getElementById('uploadArea');
-
+        
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.stopPropagation();
