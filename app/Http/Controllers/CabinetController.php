@@ -53,11 +53,12 @@ class CabinetController extends Controller
             $query->where('user_id', $user->id);
         }
         
-        // Поиск по имени или номеру телефона
+        // Поиск по имени, организации или номеру телефона
         if ($request->has('search') && strlen($request->search) >= 3) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('name', 'LIKE', "%{$search}%")
+                  ->orWhere('organization', 'LIKE', "%{$search}%")
                   ->orWhere('phone1', 'LIKE', "%{$search}%")
                   ->orWhere('phone2', 'LIKE', "%{$search}%");
             });
