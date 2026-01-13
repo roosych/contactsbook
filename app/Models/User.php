@@ -141,6 +141,7 @@ class User extends Authenticatable implements LdapAuthenticatable
     public function contactBooks(): BelongsToMany
     {
         return $this->belongsToMany(ContactBook::class, 'user_contact_books')
+                    ->withPivot('can_delete')
                     ->withTimestamps();
     }
 

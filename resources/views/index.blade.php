@@ -78,6 +78,20 @@
             <form action="{{ route('cabinet.upload') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
                 @csrf
                 
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" 
+                               type="checkbox" 
+                               id="upload_is_personal" 
+                               name="is_personal" 
+                               value="1"
+                               {{ old('is_personal') ? 'checked' : '' }}>
+                        <label class="form-check-label" for="upload_is_personal">
+                            Upload as Personal Contacts (only visible to you)
+                        </label>
+                    </div>
+                </div>
+                
                     <div class="d-flex gap-2 align-items-center">
                         <div class="border border-2 border-dashed rounded p-2 flex-grow-1 d-flex align-items-center" 
                              style="cursor: pointer; min-height: 48px;"
@@ -118,34 +132,57 @@
                     <div class="d-flex align-items-center gap-3 flex-wrap">
                         <h5 class="mb-0 fw-bold">Contacts (<span id="contacts-count">{{ $contacts->total() }}</span>)</h5>
                         
-                        @if(isset($availableBooks) && $availableBooks->count() > 1)
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="bookDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                                    @if(isset($selectedBook))
-                                        {{ $selectedBook->name }}
-                                    @else
-                                        Select Book
-                                    @endif
+                        <!-- Toggle between Personal and Group contacts -->
+                        <div class="d-flex align-items-center gap-2" role="group" aria-label="Contact type toggle">
+                            <form action="{{ route('cabinet.toggle-mode') }}" method="POST" class="d-inline">
+                                @csrf
+                                <input type="hidden" name="personal" value="1">
+                                <button type="submit" 
+                                        class="btn btn-sm {{ ($isPersonalMode ?? true) ? 'btn-primary' : 'btn-outline-primary' }}">
+                                    Personal Contacts
                                 </button>
-                                <ul class="dropdown-menu" aria-labelledby="bookDropdown">
-                                    @foreach($availableBooks as $book)
-                                        <li>
-                                            <a class="dropdown-item {{ isset($selectedBook) && $selectedBook->id === $book->id ? 'active' : '' }}" 
-                                               href="{{ route('cabinet.index', ['book_id' => $book->id]) }}">
-                                                {{ $book->name }}
-                                                @if($book->department_ou)
-                                                    <small class="text-muted d-block">{{ $book->department_ou }}</small>
-                                                @endif
-                                            </a>
-                                        </li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @elseif(isset($selectedBook))
-                            <span class="badge bg-secondary">{{ $selectedBook->name }}</span>
+                            </form>
+                            <form action="{{ route('cabinet.toggle-mode') }}" method="POST" class="d-inline">
+                                @csrf
+                                <input type="hidden" name="personal" value="0">
+                                <button type="submit" 
+                                        class="btn btn-sm {{ !($isPersonalMode ?? true) ? 'btn-primary' : 'btn-outline-primary' }}">
+                                    Group Contacts
+                                </button>
+                            </form>
+                        </div>
+                        
+                        @if(!($isPersonalMode ?? true))
+                            @if(isset($availableBooks) && $availableBooks->count() > 1)
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="bookDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                        @if(isset($selectedBook))
+                                            {{ $selectedBook->name }}
+                                        @else
+                                            Select Book
+                                        @endif
+                                    </button>
+                                    <ul class="dropdown-menu" aria-labelledby="bookDropdown">
+                                        @foreach($availableBooks as $book)
+                                            <li>
+                                                <a class="dropdown-item {{ isset($selectedBook) && $selectedBook->id === $book->id ? 'active' : '' }}" 
+                                                   href="{{ route('cabinet.index', ['book_id' => $book->id]) }}">
+                                                    {{ $book->name }}
+                                                    @if($book->department_ou)
+                                                        <small class="text-muted d-block">{{ $book->department_ou }}</small>
+                                                    @endif
+                                                </a>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @elseif(isset($selectedBook))
+                                <span class="badge bg-secondary">{{ $selectedBook->name }}</span>
+                            @endif
                         @endif
                 </div>
 
+                <div class="d-flex gap-2">
                     <button type="button" 
                             class="btn btn-sm btn-success" 
                             data-bs-toggle="modal" 
@@ -156,6 +193,18 @@
                         </svg>
                         Add Contact
                     </button>
+                    
+                    @if($isPersonalMode ?? true)
+                        <a href="{{ route('cabinet.export-personal') }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                                <path d="M.5 9.9a.5.5 0 0 1 .5.5h2a.5.5 0 0 1 0 1H3a1 1 0 0 0-1 1V14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1.6a1 1 0 0 0-1-1h-.5a.5.5 0 0 1 0-1h.5a.5.5 0 0 1 .5.5V14a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5v-1.6a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 0-1H1a.5.5 0 0 1-.5-.5V10a.5.5 0 0 1 .5-.5h.5z"/>
+                                <path d="M8 0a.5.5 0 0 1 .5.5v8.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 9.293V.5A.5.5 0 0 1 8 0z"/>
+                            </svg>
+                            Export to VCF
+                        </a>
+                    @endif
+                </div>
                 </div>
                 
                 <div class="mb-3">
@@ -247,6 +296,20 @@
                             @error('phone2')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       id="contact_is_personal" 
+                                       name="is_personal" 
+                                       value="1"
+                                       {{ old('is_personal') ? 'checked' : '' }}>
+                                <label class="form-check-label" for="contact_is_personal">
+                                    Personal Contact (only visible to you)
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -386,7 +449,7 @@
             // Show loading indicator
             contactsContainer.classList.add('search-loading');
 
-            // Get current book_id from URL or use selectedBook
+            // Get current book_id from URL (personal mode is stored in session, not in URL)
             const urlParams = new URLSearchParams(window.location.search);
             let currentBookId = urlParams.get('book_id');
             @if(isset($selectedBook) && $selectedBook)
@@ -395,7 +458,7 @@
                 }
             @endif
             
-            // Build URL with search and book_id parameters
+            // Build URL with search and book_id parameters (personal mode is in session)
             let searchUrl = `{{ route('cabinet.index') }}?search=${encodeURIComponent(searchValue)}`;
             if (currentBookId) {
                 searchUrl += `&book_id=${currentBookId}`;
@@ -435,7 +498,7 @@
                 const url = e.target.closest('.pagination a').href;
                 const searchValue = searchInput.value.trim();
 
-                // Add search parameter to pagination URL
+                // Add search parameter to pagination URL (personal mode is in session)
                 const urlObj = new URL(url);
                 if (searchValue.length >= 3) {
                     urlObj.searchParams.set('search', searchValue);
@@ -697,6 +760,180 @@
                     console.error('Error:', error);
                     submitBtn.disabled = false;
                     spinner.classList.add('d-none');
+                });
+            });
+        }
+    </script>
+
+    <!-- Move Contact Modal -->
+    <div class="modal fade" id="moveContactModal" tabindex="-1" aria-labelledby="moveContactModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="moveContactModalLabel">Move Contact to Group</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="moveContactForm" method="POST" action="{{ route('cabinet.contacts.move') }}">
+                    @csrf
+                    <div class="modal-body">
+                        <div class="alert alert-info" id="moveContactAlert">
+                            <strong>Contact with this number already exists in group book.</strong>
+                            <p class="mb-0 mt-2">Please choose which name to use:</p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Phone Number:</label>
+                            <p class="mb-0" id="moveContactPhone"></p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" 
+                                       type="radio" 
+                                       name="name_choice" 
+                                       id="nameChoiceGroup" 
+                                       value="group" 
+                                       checked>
+                                <label class="form-check-label" for="nameChoiceGroup">
+                                    <strong>Group Contact Name:</strong>
+                                    <span id="groupContactName" class="d-block text-muted"></span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" 
+                                       type="radio" 
+                                       name="name_choice" 
+                                       id="nameChoicePersonal" 
+                                       value="personal">
+                                <label class="form-check-label" for="nameChoicePersonal">
+                                    <strong>Personal Contact Name:</strong>
+                                    <span id="personalContactName" class="d-block text-muted"></span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <input type="hidden" name="contact_id" id="moveContactId">
+                        <input type="hidden" name="group_contact_id" id="moveGroupContactId">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Move Contact</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function prepareMoveContact(contactId, contactName, phone1, phone2) {
+            // Сохраняем данные контакта для использования в модалке
+            document.getElementById('moveContactId').value = contactId;
+            document.getElementById('personalContactName').textContent = contactName || '-';
+            const phoneDisplay = phone1 || phone2 || '-';
+            document.getElementById('moveContactPhone').textContent = phoneDisplay;
+            
+            // Устанавливаем action формы
+            document.getElementById('moveContactForm').action = '{{ route('cabinet.contacts.move') }}';
+            
+            // Проверяем наличие дубликата
+            fetch(`{{ route('cabinet.contacts.check-duplicate') }}?contact_id=${contactId}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.has_duplicate) {
+                    // Показываем модалку с выбором имени
+                    document.getElementById('moveGroupContactId').value = data.group_contact_id;
+                    document.getElementById('groupContactName').textContent = data.group_contact_name || '-';
+                    document.getElementById('nameChoiceGroup').checked = true;
+                    document.getElementById('nameChoicePersonal').checked = false;
+                    
+                    // Показываем модалку
+                    const modal = new bootstrap.Modal(document.getElementById('moveContactModal'));
+                    modal.show();
+                } else {
+                    // Нет дубликата - сразу перемещаем
+                    moveContactDirectly(contactId);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error checking for duplicate contacts');
+            });
+        }
+
+        function moveContactDirectly(contactId) {
+            if (!confirm('Are you sure you want to move this contact to group book?')) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('_token', '{{ csrf_token() }}');
+            formData.append('contact_id', contactId);
+            
+            fetch('{{ route('cabinet.contacts.move') }}', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Перезагружаем страницу
+                    window.location.reload();
+                } else {
+                    alert(data.message || 'Error moving contact');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error moving contact');
+            });
+        }
+
+        // Обработка формы перемещения
+        const moveContactForm = document.getElementById('moveContactForm');
+        if (moveContactForm) {
+            moveContactForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(this);
+                
+                fetch(this.action, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                    },
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Закрываем модалку и перезагружаем страницу
+                        const modalElement = document.getElementById('moveContactModal');
+                        const modal = bootstrap.Modal.getInstance(modalElement);
+                        if (modal) {
+                            modal.hide();
+                        }
+                        window.location.reload();
+                    } else {
+                        alert(data.message || 'Error moving contact');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error moving contact');
                 });
             });
         }

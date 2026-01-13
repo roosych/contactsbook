@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Sabre\VObject\Reader;
+use Sabre\VObject\Component\VCard;
 
 class CabinetController extends Controller
 {
@@ -15,42 +16,59 @@ class CabinetController extends Controller
     {
         $user = auth()->user();
         
-        // Сначала получаем или создаем дефолтную книгу пользователя
-        // (это автоматически создаст книгу для отдела, если её нет)
-        $defaultBook = $user->getDefaultContactBook();
+        // Проверяем режим из сессии, по умолчанию персональные контакты
+        $isPersonalMode = session('personal_mode', true);
         
-        // Получаем все доступные книги пользователя (включая дефолтную)
-        $availableBooks = $user->accessibleContactBooks();
-        
-        // Получаем текущую выбранную книгу из запроса или сессии
-        $selectedBookId = $request->get('book_id') ?? session('selected_book_id');
-        
-        // Если не выбрана книга, используем дефолтную
-        if (!$selectedBookId) {
-            $selectedBookId = $defaultBook ? $defaultBook->id : ($availableBooks->count() > 0 ? $availableBooks->first()->id : null);
-        }
-        
-        // Получаем выбранную книгу
-        $selectedBook = $availableBooks->firstWhere('id', $selectedBookId);
-        
-        // Если книга не найдена или пользователь не имеет к ней доступа, используем дефолтную
-        if (!$selectedBook || !$availableBooks->contains('id', $selectedBookId)) {
-            $selectedBook = $defaultBook;
-            $selectedBookId = $selectedBook ? $selectedBook->id : null;
-        }
-        
-        // Сохраняем выбранную книгу в сессию
-        if ($selectedBookId) {
-            session(['selected_book_id' => $selectedBookId]);
-        }
-        
-        // Фильтруем контакты по выбранной книге
-        $query = Contact::query();
-        if ($selectedBook) {
-            $query->where('contact_book_id', $selectedBook->id);
+        // Если выбран режим личных контактов
+        if ($isPersonalMode) {
+            // Показываем только личные контакты текущего пользователя
+            $query = Contact::query()
+                ->where('user_id', $user->id)
+                ->where('is_personal', true);
+            
+            $selectedBook = null;
+            $availableBooks = collect();
         } else {
-            // Если нет книги, показываем только контакты пользователя
-            $query->where('user_id', $user->id);
+            // Режим групповых контактов (как раньше)
+            // Сначала получаем или создаем дефолтную книгу пользователя
+            // (это автоматически создаст книгу для отдела, если её нет)
+            $defaultBook = $user->getDefaultContactBook();
+            
+            // Получаем все доступные книги пользователя (включая дефолтную)
+            $availableBooks = $user->accessibleContactBooks();
+            
+            // Получаем текущую выбранную книгу из запроса или сессии
+            $selectedBookId = $request->get('book_id') ?? session('selected_book_id');
+            
+            // Если не выбрана книга, используем дефолтную
+            if (!$selectedBookId) {
+                $selectedBookId = $defaultBook ? $defaultBook->id : ($availableBooks->count() > 0 ? $availableBooks->first()->id : null);
+            }
+            
+            // Получаем выбранную книгу
+            $selectedBook = $availableBooks->firstWhere('id', $selectedBookId);
+            
+            // Если книга не найдена или пользователь не имеет к ней доступа, используем дефолтную
+            if (!$selectedBook || !$availableBooks->contains('id', $selectedBookId)) {
+                $selectedBook = $defaultBook;
+                $selectedBookId = $selectedBook ? $selectedBook->id : null;
+            }
+            
+            // Сохраняем выбранную книгу в сессию
+            if ($selectedBookId) {
+                session(['selected_book_id' => $selectedBookId]);
+            }
+            
+            // Фильтруем контакты по выбранной книге (только групповые контакты)
+            $query = Contact::query();
+            if ($selectedBook) {
+                $query->where('contact_book_id', $selectedBook->id)
+                      ->where('is_personal', false);
+            } else {
+                // Если нет книги, показываем только групповые контакты пользователя
+                $query->where('user_id', $user->id)
+                      ->where('is_personal', false);
+            }
         }
         
         // Поиск по имени, организации или номеру телефона
@@ -67,6 +85,7 @@ class CabinetController extends Controller
         $contacts = $query->orderBy('created_at', 'desc')->paginate(20);
         
         // Передаем ID дефолтной книги для проверки возможности редактирования
+        $defaultBook = $user->getDefaultContactBook();
         $defaultBookId = $defaultBook ? $defaultBook->id : null;
         
         // Проверяем, является ли пользователь админом
@@ -74,10 +93,21 @@ class CabinetController extends Controller
         
         // Если это AJAX запрос, возвращаем только HTML таблицы
         if ($request->ajax()) {
-            return view('contacts-table', compact('contacts', 'defaultBookId', 'isAdmin'))->render();
+            return view('contacts-table', compact('contacts', 'defaultBookId', 'isAdmin', 'isPersonalMode'))->render();
         }
         
-        return view('index', compact('contacts', 'availableBooks', 'selectedBook', 'defaultBookId', 'isAdmin'));
+        return view('index', compact('contacts', 'availableBooks', 'selectedBook', 'defaultBookId', 'isAdmin', 'isPersonalMode'));
+    }
+
+    /**
+     * Переключает режим отображения контактов (персональные/групповые)
+     */
+    public function toggleMode(Request $request)
+    {
+        $isPersonal = $request->input('personal', true);
+        session(['personal_mode' => (bool) $isPersonal]);
+        
+        return redirect()->route('cabinet.index');
     }
 
     public function upload(Request $request)
@@ -94,6 +124,7 @@ class CabinetController extends Controller
                     }
                 },
             ],
+            'is_personal' => 'nullable|boolean',
         ]);
 
         try {
@@ -104,18 +135,31 @@ class CabinetController extends Controller
             // Сохраняем файл в storage/app/vcf
             $path = $file->storeAs('vcf', $fileName, 'local');
             
-            // Получаем текущую книгу пользователя
             $user = auth()->user();
-            $contactBook = $user->getDefaultContactBook();
+            $isPersonal = $request->has('is_personal') && $request->is_personal;
             
-            if (!$contactBook) {
-                return redirect()->route('cabinet.index')->with('error', 
-                    'Unable to determine contact book. Please contact the administrator.'
-                );
+            $contactBookId = null;
+            if (!$isPersonal) {
+                // Для групповых контактов нужна книга
+                $contactBook = $user->getDefaultContactBook();
+                
+                if (!$contactBook) {
+                    return redirect()->route('cabinet.index')->with('error', 
+                        'Unable to determine contact book. Please contact the administrator.'
+                    );
+                }
+                $contactBookId = $contactBook->id;
             }
             
             // Parse VCF file and save contacts
-            $contactsCount = $this->parseVcfFile(Storage::path($path), auth()->id(), $contactBook->id);
+            $contactsCount = $this->parseVcfFile(Storage::path($path), auth()->id(), $contactBookId, $isPersonal);
+            
+            // Устанавливаем режим отображения в зависимости от типа загруженных контактов
+            if ($isPersonal) {
+                session(['personal_mode' => true]);
+            } else {
+                session(['personal_mode' => false]);
+            }
             
             return redirect()->route('cabinet.index')->with('success', 
                 'File "' . $originalName . '" uploaded successfully! Processed contacts: ' . $contactsCount
@@ -132,10 +176,11 @@ class CabinetController extends Controller
      *
      * @param string $filePath Путь к VCF файлу
      * @param int $userId ID пользователя, который загрузил файл
-     * @param int $contactBookId ID книги контактов
+     * @param int|null $contactBookId ID книги контактов (null для личных контактов)
+     * @param bool $isPersonal Флаг личных контактов
      * @return int Количество обработанных контактов
      */
-    private function parseVcfFile(string $filePath, int $userId, int $contactBookId): int
+    private function parseVcfFile(string $filePath, int $userId, ?int $contactBookId, bool $isPersonal = false): int
     {
         $contactsCount = 0;
         
@@ -279,14 +324,25 @@ class CabinetController extends Controller
                     $phone1 = $phones[0] ?? null;
                     $phone2 = $phones[1] ?? null;
                     
-                    // Проверяем phone1 (проверяем в рамках текущей книги)
+                    // Проверяем phone1
                     if ($phone1) {
-                        $existingContact = Contact::where('contact_book_id', $contactBookId)
+                        $duplicateQuery = Contact::where('user_id', $userId)
+                            ->where('is_personal', $isPersonal)
                             ->where(function($query) use ($phone1) {
                                 $query->where('phone1', $phone1)
                                       ->orWhere('phone2', $phone1);
-                            })
-                            ->first();
+                            });
+                        
+                        // Для групповых контактов проверяем также по книге
+                        if (!$isPersonal && $contactBookId) {
+                            $duplicateQuery->where('contact_book_id', $contactBookId);
+                        }
+                        // Для личных контактов contact_book_id должен быть null
+                        if ($isPersonal) {
+                            $duplicateQuery->whereNull('contact_book_id');
+                        }
+                        
+                        $existingContact = $duplicateQuery->first();
                         
                         if ($existingContact) {
                             // Обновляем имя, если оно было пустым или если новое имя не пустое
@@ -307,12 +363,23 @@ class CabinetController extends Controller
                     
                     // Проверяем phone2, если phone1 не нашелся
                     if ($phone2 && !$phone1) {
-                        $existingContact = Contact::where('contact_book_id', $contactBookId)
+                        $duplicateQuery = Contact::where('user_id', $userId)
+                            ->where('is_personal', $isPersonal)
                             ->where(function($query) use ($phone2) {
                                 $query->where('phone1', $phone2)
                                       ->orWhere('phone2', $phone2);
-                            })
-                            ->first();
+                            });
+                        
+                        // Для групповых контактов проверяем также по книге
+                        if (!$isPersonal && $contactBookId) {
+                            $duplicateQuery->where('contact_book_id', $contactBookId);
+                        }
+                        // Для личных контактов contact_book_id должен быть null
+                        if ($isPersonal) {
+                            $duplicateQuery->whereNull('contact_book_id');
+                        }
+                        
+                        $existingContact = $duplicateQuery->first();
                         
                         if ($existingContact) {
                             if (empty($existingContact->name) && !empty($name)) {
@@ -334,7 +401,8 @@ class CabinetController extends Controller
                         'phone1' => $phone1,
                         'phone2' => $phone2,
                         'user_id' => $userId,
-                        'contact_book_id' => $contactBookId,
+                        'contact_book_id' => $isPersonal ? null : $contactBookId,
+                        'is_personal' => $isPersonal,
                     ];
                     
                     // Проверка: если organization не пустая и похожа на телефонный номер, это ошибка
@@ -469,19 +537,15 @@ class CabinetController extends Controller
     {
         $user = auth()->user();
         
-        // Получаем дефолтную книгу пользователя
-        $defaultBook = $user->getDefaultContactBook();
-        
-        if (!$defaultBook) {
-            return back()->withErrors(['error' => 'Unable to determine contact book. Please contact the administrator.']);
-        }
-
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'organization' => 'nullable|string|max:255',
             'phone1' => 'required|string|max:20',
             'phone2' => 'nullable|string|max:20',
+            'is_personal' => 'nullable|boolean',
         ]);
+
+        $isPersonal = $request->has('is_personal') && $request->is_personal;
 
         // Нормализуем номера телефонов
         $phone1 = $this->normalizePhoneNumber($validated['phone1']);
@@ -502,46 +566,98 @@ class CabinetController extends Controller
             $phone2 = null;
         }
 
-        // Проверяем дубликаты номеров в книге отдела
-        $bookId = $defaultBook->id;
-
-        // Проверяем phone1
-        $duplicateQuery = Contact::where('contact_book_id', $bookId)
-            ->where(function($query) use ($phone1) {
-                $query->where('phone1', $phone1)
-                      ->orWhere('phone2', $phone1);
-            })
-            ->first();
-
-        if ($duplicateQuery) {
-            return back()->withErrors(['phone1' => 'A contact with this number already exists in this book']);
-        }
-
-        // Проверяем phone2, если он есть
-        if ($phone2) {
-            $duplicateQuery = Contact::where('contact_book_id', $bookId)
-                ->where(function($query) use ($phone2) {
-                    $query->where('phone1', $phone2)
-                          ->orWhere('phone2', $phone2);
+        // Если это личный контакт
+        if ($isPersonal) {
+            // Проверяем дубликаты только среди личных контактов пользователя
+            $duplicateQuery = Contact::where('user_id', $user->id)
+                ->where('is_personal', true)
+                ->where(function($query) use ($phone1) {
+                    $query->where('phone1', $phone1)
+                          ->orWhere('phone2', $phone1);
                 })
                 ->first();
 
             if ($duplicateQuery) {
-                return back()->withErrors(['phone2' => 'A contact with this number already exists in this book']);
+                return back()->withErrors(['phone1' => 'A personal contact with this number already exists']);
             }
+
+            if ($phone2) {
+                $duplicateQuery = Contact::where('user_id', $user->id)
+                    ->where('is_personal', true)
+                    ->where(function($query) use ($phone2) {
+                        $query->where('phone1', $phone2)
+                              ->orWhere('phone2', $phone2);
+                    })
+                    ->first();
+
+                if ($duplicateQuery) {
+                    return back()->withErrors(['phone2' => 'A personal contact with this number already exists']);
+                }
+            }
+
+            // Создаем личный контакт
+            Contact::create([
+                'name' => $validated['name'],
+                'organization' => $validated['organization'] ?? null,
+                'phone1' => $phone1,
+                'phone2' => $phone2,
+                'user_id' => $user->id,
+                'contact_book_id' => null,
+                'is_personal' => true,
+            ]);
+
+            session(['personal_mode' => true]);
+            return redirect()->route('cabinet.index')->with('success', 'Personal contact created successfully');
+        } else {
+            // Групповой контакт (как раньше)
+            $defaultBook = $user->getDefaultContactBook();
+            
+            if (!$defaultBook) {
+                return back()->withErrors(['error' => 'Unable to determine contact book. Please contact the administrator.']);
+            }
+
+            $bookId = $defaultBook->id;
+
+            // Проверяем дубликаты номеров в книге отдела
+            $duplicateQuery = Contact::where('contact_book_id', $bookId)
+                ->where('is_personal', false)
+                ->where(function($query) use ($phone1) {
+                    $query->where('phone1', $phone1)
+                          ->orWhere('phone2', $phone1);
+                })
+                ->first();
+
+            if ($duplicateQuery) {
+                return back()->withErrors(['phone1' => 'A contact with this number already exists in this book']);
+            }
+
+            if ($phone2) {
+                $duplicateQuery = Contact::where('contact_book_id', $bookId)
+                    ->where('is_personal', false)
+                    ->where(function($query) use ($phone2) {
+                        $query->where('phone1', $phone2)
+                              ->orWhere('phone2', $phone2);
+                    })
+                    ->first();
+
+                if ($duplicateQuery) {
+                    return back()->withErrors(['phone2' => 'A contact with this number already exists in this book']);
+                }
+            }
+
+            // Создаем групповой контакт
+            Contact::create([
+                'name' => $validated['name'],
+                'organization' => $validated['organization'] ?? null,
+                'phone1' => $phone1,
+                'phone2' => $phone2,
+                'user_id' => $user->id,
+                'contact_book_id' => $bookId,
+                'is_personal' => false,
+            ]);
+
+            return redirect()->route('cabinet.index', ['book_id' => $bookId])->with('success', 'Contact created successfully');
         }
-
-        // Создаем новый контакт
-        Contact::create([
-            'name' => $validated['name'],
-            'organization' => $validated['organization'] ?? null,
-            'phone1' => $phone1,
-            'phone2' => $phone2,
-            'user_id' => $user->id,
-            'contact_book_id' => $bookId,
-        ]);
-
-        return redirect()->route('cabinet.index', ['book_id' => $bookId])->with('success', 'Contact created successfully');
     }
 
     /**
@@ -551,24 +667,15 @@ class CabinetController extends Controller
     {
         $user = auth()->user();
         
-        // Получаем дефолтную книгу пользователя
-        $defaultBook = $user->getDefaultContactBook();
-        
-        // Check that contact belongs to user's default book
-        // User can only edit contacts from their default book
-        if ($contact->contact_book_id) {
-            if (!$defaultBook || $contact->contact_book_id !== $defaultBook->id) {
-                abort(403, 'You can only edit contacts from your department');
+        // Для личных контактов: только владелец может редактировать
+        if ($contact->is_personal) {
+            if ($contact->user_id !== $user->id) {
+                abort(403, 'You can only edit your own personal contacts');
             }
         } else {
-            // If contact is not linked to a book, check that it belongs to the user
-            // and that the user has no default book (old contacts)
+            // Для групповых контактов: может редактировать только тот, кто создал контакт
             if ($contact->user_id !== $user->id) {
-                abort(403, 'You do not have access to this contact');
-            }
-            // If user has a default book, old contacts cannot be edited
-            if ($defaultBook) {
-                abort(403, 'You can only edit contacts from your department');
+                abort(403, 'You can only edit contacts that you created');
             }
         }
 
@@ -585,24 +692,15 @@ class CabinetController extends Controller
     {
         $user = auth()->user();
         
-        // Получаем дефолтную книгу пользователя
-        $defaultBook = $user->getDefaultContactBook();
-        
-        // Check that contact belongs to user's default book
-        // User can only edit contacts from their default book
-        if ($contact->contact_book_id) {
-            if (!$defaultBook || $contact->contact_book_id !== $defaultBook->id) {
-                abort(403, 'You can only edit contacts from your department');
+        // Для личных контактов: только владелец может редактировать
+        if ($contact->is_personal) {
+            if ($contact->user_id !== $user->id) {
+                abort(403, 'You can only edit your own personal contacts');
             }
         } else {
-            // If contact is not linked to a book, check that it belongs to the user
-            // and that the user has no default book (old contacts)
+            // Для групповых контактов: может редактировать только тот, кто создал контакт
             if ($contact->user_id !== $user->id) {
-                abort(403, 'You do not have access to this contact');
-            }
-            // If user has a default book, old contacts cannot be edited
-            if ($defaultBook) {
-                abort(403, 'You can only edit contacts from your department');
+                abort(403, 'You can only edit contacts that you created');
             }
         }
 
@@ -621,47 +719,85 @@ class CabinetController extends Controller
             $validated['phone2'] = $this->normalizePhoneNumber($validated['phone2']);
         }
 
-        // Определяем ID книги для проверки дубликатов
-        $bookId = $contact->contact_book_id;
+        // Проверяем дубликаты в зависимости от типа контакта
+        if ($contact->is_personal) {
+            // Для личных контактов: проверяем только среди личных контактов пользователя
+            if (!empty($validated['phone1'])) {
+                $duplicateQuery = Contact::where('id', '!=', $contact->id)
+                    ->where('user_id', $user->id)
+                    ->where('is_personal', true)
+                    ->where(function($query) use ($validated) {
+                        $query->where('phone1', $validated['phone1'])
+                              ->orWhere('phone2', $validated['phone1']);
+                    });
+                
+                $duplicate = $duplicateQuery->first();
+                
+                if ($duplicate) {
+                    return back()->withErrors(['phone1' => 'A personal contact with this number already exists']);
+                }
+            }
 
-        // Check that numbers are not duplicated in other contacts in the same book
-        if (!empty($validated['phone1'])) {
-            $duplicateQuery = Contact::where('id', '!=', $contact->id)
-                ->where(function($query) use ($validated) {
-                    $query->where('phone1', $validated['phone1'])
-                          ->orWhere('phone2', $validated['phone1']);
-                });
-            
-            if ($bookId) {
-                $duplicateQuery->where('contact_book_id', $bookId);
-            } else {
-                $duplicateQuery->where('user_id', $user->id)->whereNull('contact_book_id');
+            if (!empty($validated['phone2'])) {
+                $duplicateQuery = Contact::where('id', '!=', $contact->id)
+                    ->where('user_id', $user->id)
+                    ->where('is_personal', true)
+                    ->where(function($query) use ($validated) {
+                        $query->where('phone1', $validated['phone2'])
+                              ->orWhere('phone2', $validated['phone2']);
+                    });
+                
+                $duplicate = $duplicateQuery->first();
+                
+                if ($duplicate) {
+                    return back()->withErrors(['phone2' => 'A personal contact with this number already exists']);
+                }
             }
-            
-            $duplicate = $duplicateQuery->first();
-            
-            if ($duplicate) {
-                return back()->withErrors(['phone1' => 'A contact with this number already exists in this book']);
-            }
-        }
+        } else {
+            // Для групповых контактов: проверка как раньше
+            $bookId = $contact->contact_book_id;
 
-        if (!empty($validated['phone2'])) {
-            $duplicateQuery = Contact::where('id', '!=', $contact->id)
-                ->where(function($query) use ($validated) {
-                    $query->where('phone1', $validated['phone2'])
-                          ->orWhere('phone2', $validated['phone2']);
-                });
-            
-            if ($bookId) {
-                $duplicateQuery->where('contact_book_id', $bookId);
-            } else {
-                $duplicateQuery->where('user_id', $user->id)->whereNull('contact_book_id');
+            // Check that numbers are not duplicated in other contacts in the same book
+            if (!empty($validated['phone1'])) {
+                $duplicateQuery = Contact::where('id', '!=', $contact->id)
+                    ->where('is_personal', false)
+                    ->where(function($query) use ($validated) {
+                        $query->where('phone1', $validated['phone1'])
+                              ->orWhere('phone2', $validated['phone1']);
+                    });
+                
+                if ($bookId) {
+                    $duplicateQuery->where('contact_book_id', $bookId);
+                } else {
+                    $duplicateQuery->where('user_id', $user->id)->whereNull('contact_book_id');
+                }
+                
+                $duplicate = $duplicateQuery->first();
+                
+                if ($duplicate) {
+                    return back()->withErrors(['phone1' => 'A contact with this number already exists in this book']);
+                }
             }
-            
-            $duplicate = $duplicateQuery->first();
-            
-            if ($duplicate) {
-                return back()->withErrors(['phone2' => 'A contact with this number already exists in this book']);
+
+            if (!empty($validated['phone2'])) {
+                $duplicateQuery = Contact::where('id', '!=', $contact->id)
+                    ->where('is_personal', false)
+                    ->where(function($query) use ($validated) {
+                        $query->where('phone1', $validated['phone2'])
+                              ->orWhere('phone2', $validated['phone2']);
+                    });
+                
+                if ($bookId) {
+                    $duplicateQuery->where('contact_book_id', $bookId);
+                } else {
+                    $duplicateQuery->where('user_id', $user->id)->whereNull('contact_book_id');
+                }
+                
+                $duplicate = $duplicateQuery->first();
+                
+                if ($duplicate) {
+                    return back()->withErrors(['phone2' => 'A contact with this number already exists in this book']);
+                }
             }
         }
 
@@ -670,7 +806,54 @@ class CabinetController extends Controller
         
         $contact->update($validated);
 
+        // Перенаправляем обратно в соответствующий режим
+        if ($contact->is_personal) {
+            session(['personal_mode' => true]);
+        } else {
+            session(['personal_mode' => false]);
+        }
         return redirect()->route('cabinet.index')->with('success', 'Contact updated successfully');
+    }
+
+    /**
+     * Проверяет, имеет ли пользователь доступ к книге контактов
+     */
+    private function hasAccessToBook($user, $contactBookId): bool
+    {
+        if (!$contactBookId) {
+            return false;
+        }
+        
+        // Проверяем, является ли это дефолтной книгой пользователя
+        $defaultBook = $user->getDefaultContactBook();
+        if ($defaultBook && $defaultBook->id === $contactBookId) {
+            return true;
+        }
+        
+        // Проверяем, имеет ли пользователь доступ через user_contact_books
+        return $user->contactBooks()->where('contact_books.id', $contactBookId)->exists();
+    }
+
+    /**
+     * Проверяет, имеет ли пользователь право на удаление контактов в книге
+     */
+    private function canDeleteFromBook($user, $contactBookId): bool
+    {
+        if (!$contactBookId) {
+            return false;
+        }
+        
+        // Проверяем, имеет ли пользователь доступ через user_contact_books с флагом can_delete
+        // Для дефолтной книги также нужно явно предоставить can_delete через админ-панель
+        $pivot = $user->contactBooks()
+            ->where('contact_books.id', $contactBookId)
+            ->first();
+        
+        if ($pivot && $pivot->pivot->can_delete) {
+            return true;
+        }
+        
+        return false;
     }
 
     /**
@@ -680,14 +863,272 @@ class CabinetController extends Controller
     {
         $user = auth()->user();
         
-        // Админы могут удалять любые контакты
-        // Обычные пользователи могут удалять только свои контакты
-        if (!$user->isAdmin() && $contact->user_id !== $user->id) {
-            abort(403, 'You do not have access to this contact');
+        // Для личных контактов: только владелец может удалять
+        if ($contact->is_personal) {
+            if ($contact->user_id !== $user->id) {
+                abort(403, 'You can only delete your own personal contacts');
+            }
+        } else {
+            // Для групповых контактов: может удалять только если:
+            // 1. Пользователь имеет право на удаление в книге (can_delete = true в user_contact_books или дефолтная книга)
+            // 2. ИЛИ пользователь - админ
+            // Примечание: создатель контакта сам по себе НЕ может удалять свои контакты
+            $canDelete = false;
+            
+            if ($user->isAdmin()) {
+                $canDelete = true;
+            } elseif ($this->canDeleteFromBook($user, $contact->contact_book_id)) {
+                $canDelete = true;
+            }
+            
+            if (!$canDelete) {
+                abort(403, 'You do not have permission to delete this contact');
+            }
         }
 
         $contact->delete();
 
+        // Перенаправляем обратно в соответствующий режим
+        if ($contact->is_personal) {
+            session(['personal_mode' => true]);
+        } else {
+            session(['personal_mode' => false]);
+        }
         return redirect()->route('cabinet.index')->with('success', 'Contact deleted successfully');
+    }
+
+    /**
+     * Экспортирует личные контакты пользователя в VCF файл
+     */
+    public function exportPersonalContacts(Request $request)
+    {
+        $user = auth()->user();
+        
+        // Получаем все личные контакты пользователя
+        $contacts = Contact::where('user_id', $user->id)
+            ->where('is_personal', true)
+            ->orderBy('name')
+            ->get();
+        
+        if ($contacts->isEmpty()) {
+            return redirect()->route('cabinet.index')->with('error', 'No personal contacts to export');
+        }
+        
+        // Создаем VCF файл
+        $vcfContent = '';
+        
+        foreach ($contacts as $contact) {
+            $vcard = new VCard();
+            
+            // Добавляем имя
+            if (!empty($contact->name)) {
+                $vcard->add('FN', $contact->name);
+                
+                // Парсим имя на части для поля N (Family Name;Given Name;Additional Names;Honorific Prefixes;Honorific Suffixes)
+                $nameParts = explode(' ', trim($contact->name), 2);
+                if (count($nameParts) >= 2) {
+                    // Если есть пробел, первая часть - имя, вторая - фамилия
+                    $vcard->add('N', [$nameParts[1], $nameParts[0], '', '', '']);
+                } else {
+                    // Если нет пробела, все идет в фамилию
+                    $vcard->add('N', [$nameParts[0], '', '', '', '']);
+                }
+            }
+            
+            // Добавляем организацию
+            if (!empty($contact->organization)) {
+                $vcard->add('ORG', $contact->organization);
+            }
+            
+            // Добавляем телефоны
+            if (!empty($contact->phone1)) {
+                $vcard->add('TEL', $contact->phone1, ['TYPE' => 'CELL']);
+            }
+            
+            if (!empty($contact->phone2)) {
+                $vcard->add('TEL', $contact->phone2, ['TYPE' => 'CELL']);
+            }
+            
+            $vcfContent .= $vcard->serialize() . "\n";
+        }
+        
+        // Генерируем имя файла
+        $fileName = 'personal_contacts_' . date('Y-m-d_His') . '.vcf';
+        
+        // Возвращаем файл для скачивания
+        return response($vcfContent)
+            ->header('Content-Type', 'text/vcard; charset=utf-8')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"')
+            ->header('Content-Length', strlen($vcfContent));
+    }
+
+    /**
+     * Проверяет наличие дубликата контакта в групповой книге
+     */
+    public function checkDuplicate(Request $request)
+    {
+        $user = auth()->user();
+        $contactId = $request->get('contact_id');
+        
+        $contact = Contact::where('id', $contactId)
+            ->where('user_id', $user->id)
+            ->where('is_personal', true)
+            ->first();
+        
+        if (!$contact) {
+            return response()->json([
+                'has_duplicate' => false,
+                'message' => 'Contact not found'
+            ], 404);
+        }
+        
+        // Получаем дефолтную книгу пользователя
+        $defaultBook = $user->getDefaultContactBook();
+        
+        if (!$defaultBook) {
+            return response()->json([
+                'has_duplicate' => false,
+                'message' => 'No default book found'
+            ]);
+        }
+        
+        // Проверяем дубликаты по телефонным номерам
+        $duplicateQuery = Contact::where('contact_book_id', $defaultBook->id)
+            ->where('is_personal', false)
+            ->where(function($query) use ($contact) {
+                if ($contact->phone1) {
+                    $query->where('phone1', $contact->phone1)
+                          ->orWhere('phone2', $contact->phone1);
+                }
+                if ($contact->phone2) {
+                    $query->orWhere('phone1', $contact->phone2)
+                          ->orWhere('phone2', $contact->phone2);
+                }
+            })
+            ->first();
+        
+        if ($duplicateQuery) {
+            return response()->json([
+                'has_duplicate' => true,
+                'group_contact_id' => $duplicateQuery->id,
+                'group_contact_name' => $duplicateQuery->name ?? '-',
+            ]);
+        }
+        
+        return response()->json([
+            'has_duplicate' => false
+        ]);
+    }
+
+    /**
+     * Перемещает контакт из личной книги в групповую
+     */
+    public function moveToGroup(Request $request)
+    {
+        $user = auth()->user();
+        
+        $validated = $request->validate([
+            'contact_id' => 'required|exists:contacts,id',
+            'name_choice' => 'nullable|in:group,personal',
+            'group_contact_id' => 'nullable|exists:contacts,id',
+        ]);
+        
+        $contact = Contact::where('id', $validated['contact_id'])
+            ->where('user_id', $user->id)
+            ->where('is_personal', true)
+            ->first();
+        
+        if (!$contact) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Contact not found or you do not have permission'
+            ], 404);
+        }
+        
+        // Получаем дефолтную книгу пользователя
+        $defaultBook = $user->getDefaultContactBook();
+        
+        if (!$defaultBook) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No default book found'
+            ], 400);
+        }
+        
+        // Если есть дубликат и выбран выбор имени
+        if (!empty($validated['group_contact_id']) && !empty($validated['name_choice'])) {
+            $groupContact = Contact::where('id', $validated['group_contact_id'])
+                ->where('contact_book_id', $defaultBook->id)
+                ->where('is_personal', false)
+                ->first();
+            
+            if ($groupContact) {
+                // Обновляем имя в групповом контакте в зависимости от выбора
+                if ($validated['name_choice'] === 'personal' && !empty($contact->name)) {
+                    $groupContact->update(['name' => $contact->name]);
+                }
+                
+                // Обновляем организацию, если она пустая в групповом контакте
+                if (empty($groupContact->organization) && !empty($contact->organization)) {
+                    $groupContact->update(['organization' => $contact->organization]);
+                }
+                
+                // Обновляем phone2, если он пустой в групповом контакте
+                if (empty($groupContact->phone2) && !empty($contact->phone2)) {
+                    $groupContact->update(['phone2' => $contact->phone2]);
+                } elseif (empty($groupContact->phone2) && !empty($contact->phone1) && $groupContact->phone1 !== $contact->phone1) {
+                    // Если phone2 пустой, но phone1 отличается, добавляем phone1 из личного контакта как phone2
+                    $groupContact->update(['phone2' => $contact->phone1]);
+                }
+                
+                // Личный контакт остается в личной книге (не удаляем)
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Contact copied to group book and merged with existing contact'
+                ]);
+            }
+        }
+        
+        // Проверяем дубликаты перед созданием копии
+        $duplicateQuery = Contact::where('contact_book_id', $defaultBook->id)
+            ->where('is_personal', false)
+            ->where(function($query) use ($contact) {
+                if ($contact->phone1) {
+                    $query->where('phone1', $contact->phone1)
+                          ->orWhere('phone2', $contact->phone1);
+                }
+                if ($contact->phone2) {
+                    $query->orWhere('phone1', $contact->phone2)
+                          ->orWhere('phone2', $contact->phone2);
+                }
+            })
+            ->first();
+        
+        if ($duplicateQuery) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Contact with this number already exists in group book'
+            ], 400);
+        }
+        
+        // Создаем копию контакта в групповой книге (личный контакт остается)
+        Contact::create([
+            'name' => $contact->name,
+            'organization' => $contact->organization,
+            'phone1' => $contact->phone1,
+            'phone2' => $contact->phone2,
+            'user_id' => $user->id,
+            'contact_book_id' => $defaultBook->id,
+            'is_personal' => false,
+        ]);
+        
+        // Устанавливаем режим групповых контактов
+        session(['personal_mode' => false]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Contact copied to group book successfully'
+        ]);
     }
 }

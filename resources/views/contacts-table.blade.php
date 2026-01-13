@@ -33,15 +33,16 @@
                         <td class="text-end">
                             <div class="d-flex align-items-center justify-content-end gap-2">
                                 @php
-                                    // User can only edit contacts from their default book
+                                    // Логика прав на редактирование:
+                                    // Личные контакты: может редактировать только владелец
+                                    // Групповые контакты: может редактировать только тот, кто создал контакт
                                     $canEdit = false;
-                                    $defaultBookIdValue = $defaultBookId ?? null;
                                     $isAdminValue = $isAdmin ?? false;
                                     
-                                    if ($contact->contact_book_id && $defaultBookIdValue !== null) {
-                                        $canEdit = $contact->contact_book_id == $defaultBookIdValue;
-                                    } elseif (!$contact->contact_book_id && $defaultBookIdValue === null) {
-                                        // Old contacts without book can only be edited if user has no default book
+                                    if ($contact->is_personal) {
+                                        $canEdit = $contact->user_id === auth()->id();
+                                    } else {
+                                        // Для групповых контактов: только создатель может редактировать
                                         $canEdit = $contact->user_id === auth()->id();
                                     }
                                 @endphp
@@ -55,12 +56,56 @@
                                         </svg>
                                     </a>
                                 @else
-                                    <span class="text-muted small" title="Editing is only available for contacts from your department">
+                                    <span class="text-muted small" title="You can only edit contacts that you created">
                                         —
                                     </span>
                                 @endif
                                 
-                                @if($isAdminValue)
+                                @if($contact->is_personal && $contact->user_id === auth()->id())
+                                    <button type="button" 
+                                            class="btn btn-sm btn-link text-decoration-none" 
+                                            title="Move to Group"
+                                            style="padding: 4px 8px;"
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#moveContactModal_{{ $contact->id }}"
+                                            onclick="prepareMoveContact({{ $contact->id }}, '{{ addslashes($contact->name ?? '') }}', '{{ $contact->phone1 ?? '' }}', '{{ $contact->phone2 ?? '' }}')">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-right-circle" viewBox="0 0 16 16">
+                                            <path fill-rule="evenodd" d="M1 8a7 7 0 1 0 14 0A7 7 0 0 0 1 8zm15 0A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM4.5 7.5a.5.5 0 0 0 0 1h5.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L10.293 7.5H4.5z"/>
+                                        </svg>
+                                    </button>
+                                @endif
+                                
+                                @php
+                                    // Логика прав на удаление:
+                                    // Личные контакты: может удалять только владелец
+                                    // Групповые контакты: может удалять только если:
+                                    //   1. Пользователь имеет доступ к книге (пермишн) - доступ через user_contact_books или дефолтная книга
+                                    //   2. ИЛИ пользователь - админ
+                                    // Примечание: создатель контакта сам по себе НЕ может удалять свои контакты
+                                    $canDelete = false;
+                                    $currentUser = auth()->user();
+                                    
+                                    if ($contact->is_personal) {
+                                        $canDelete = $contact->user_id === $currentUser->id;
+                                    } else {
+                                        // Для групповых контактов проверяем право на удаление или админ права
+                                        if ($isAdminValue) {
+                                            $canDelete = true;
+                                        } elseif ($contact->contact_book_id) {
+                                            // Проверяем право на удаление через user_contact_books с флагом can_delete
+                                            // Для дефолтной книги также нужно явно предоставить can_delete через админ-панель
+                                            $pivot = $currentUser->contactBooks()
+                                                ->where('contact_books.id', $contact->contact_book_id)
+                                                ->first();
+                                            
+                                            if ($pivot && $pivot->pivot->can_delete) {
+                                                $canDelete = true;
+                                            }
+                                        }
+                                    }
+                                @endphp
+                                
+                                @if($canDelete)
                                     <form action="{{ route('cabinet.contacts.destroy', $contact) }}" 
                                           method="POST" 
                                           class="d-inline delete-contact-form"

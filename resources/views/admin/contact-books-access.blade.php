@@ -80,24 +80,53 @@
                                                             if ($isDefaultBook) {
                                                                 $isChecked = true;
                                                             }
+                                                            
+                                                            // Получаем значение can_delete из pivot
+                                                            $canDelete = false;
+                                                            if ($isChecked) {
+                                                                $pivot = $user->contactBooks()->where('contact_books.id', $book->id)->first();
+                                                                if ($pivot && $pivot->pivot->can_delete) {
+                                                                    $canDelete = true;
+                                                                }
+                                                            }
                                                         @endphp
                                                         <div class="form-check border rounded p-3 {{ $isChecked ? 'checked' : '' }} {{ $isDefaultBook ? 'default-book' : '' }}">
-                                                            <input class="form-check-input" 
-                                                                   type="checkbox" 
-                                                                   name="contact_book_ids[]" 
-                                                                   value="{{ $book->id }}" 
-                                                                   id="book_{{ $user->id }}_{{ $book->id }}"
-                                                                   {{ $isChecked ? 'checked' : '' }}
-                                                                   {{ $isDefaultBook ? 'disabled' : '' }}>
-                                                            <label class="form-check-label small" for="book_{{ $user->id }}_{{ $book->id }}">
-                                                                <span>{{ $book->name }}</span>
-                                                                @if($book->department_ou)
-                                                                    <span class="text-muted">({{ $book->department_ou }})</span>
-                                                                @endif
-                                                                @if($isDefaultBook)
-                                                                    <span class="badge bg-secondary ms-1" style="font-size: 9px;">Default</span>
-                                                                @endif
-                                                            </label>
+                                                            <div class="d-flex align-items-start gap-2">
+                                                                <input class="form-check-input mt-1" 
+                                                                       type="checkbox" 
+                                                                       name="contact_book_ids[]" 
+                                                                       value="{{ $book->id }}" 
+                                                                       id="book_{{ $user->id }}_{{ $book->id }}"
+                                                                       {{ $isChecked ? 'checked' : '' }}
+                                                                       {{ $isDefaultBook ? 'disabled' : '' }}
+                                                                       onchange="toggleCanDelete({{ $user->id }}, {{ $book->id }}, this.checked)">
+                                                                <div class="flex-grow-1">
+                                                                    <label class="form-check-label small d-block" for="book_{{ $user->id }}_{{ $book->id }}">
+                                                                        <span>{{ $book->name }}</span>
+                                                                        @if($book->department_ou)
+                                                                            <span class="text-muted">({{ $book->department_ou }})</span>
+                                                                        @endif
+                                                                        @if($isDefaultBook)
+                                                                            <span class="badge bg-secondary ms-1" style="font-size: 9px;">Default</span>
+                                                                        @endif
+                                                                    </label>
+                                                                    @if($isChecked || $isDefaultBook)
+                                                                        <div class="mt-2" id="can_delete_container_{{ $user->id }}_{{ $book->id }}" style="display: {{ ($isChecked || $isDefaultBook) ? 'block' : 'none' }};">
+                                                                            <div class="form-check form-check-sm">
+                                                                                <input class="form-check-input" 
+                                                                                       type="checkbox" 
+                                                                                       name="can_delete[{{ $book->id }}]" 
+                                                                                       value="1" 
+                                                                                       id="can_delete_{{ $user->id }}_{{ $book->id }}"
+                                                                                       {{ $canDelete ? 'checked' : '' }}>
+                                                                                <label class="form-check-label small text-muted" for="can_delete_{{ $user->id }}_{{ $book->id }}">
+                                                                                    Can delete contacts
+                                                                                </label>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     @endforeach
                                                 @else
@@ -119,8 +148,23 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function toggleCanDelete(userId, bookId, isChecked) {
+            const canDeleteCheckbox = document.getElementById('can_delete_' + userId + '_' + bookId);
+            if (!canDeleteCheckbox) return;
+            
+            const canDeleteContainer = canDeleteCheckbox.closest('.mt-2');
+            if (!canDeleteContainer) return;
+            
+            if (isChecked) {
+                canDeleteContainer.style.display = 'block';
+            } else {
+                canDeleteContainer.style.display = 'none';
+                canDeleteCheckbox.checked = false;
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            const checkboxes = document.querySelectorAll('.form-check-input');
+            const checkboxes = document.querySelectorAll('input[name^="contact_book_ids"]');
             
             checkboxes.forEach(function(checkbox) {
                 updateCheckboxState(checkbox);
@@ -128,6 +172,9 @@
                 if (!checkbox.disabled) {
                     checkbox.addEventListener('change', function() {
                         updateCheckboxState(this);
+                        const bookId = this.value;
+                        const userId = this.id.split('_')[1];
+                        toggleCanDelete(userId, bookId, this.checked);
                     });
                 }
             });
@@ -141,11 +188,20 @@
                 }
             }
 
+            // Инициализируем видимость can_delete для уже отмеченных книг
+            checkboxes.forEach(function(checkbox) {
+                if (checkbox.checked) {
+                    const bookId = checkbox.value;
+                    const userId = checkbox.id.split('_')[1];
+                    toggleCanDelete(userId, bookId, true);
+                }
+            });
+
             const forms = document.querySelectorAll('form');
             forms.forEach(function(form) {
                 form.addEventListener('submit', function(e) {
                     const userCard = form.closest('.card');
-                    const defaultCheckbox = userCard.querySelector('.form-check-input:disabled');
+                    const defaultCheckbox = userCard.querySelector('input[name^="contact_book_ids"]:disabled');
                     if (defaultCheckbox && defaultCheckbox.checked) {
                         const hiddenInput = document.createElement('input');
                         hiddenInput.type = 'hidden';

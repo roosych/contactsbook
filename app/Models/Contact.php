@@ -15,6 +15,7 @@ class Contact extends Model
         'user_id',
         'updated_by',
         'contact_book_id',
+        'is_personal',
     ];
 
     /**

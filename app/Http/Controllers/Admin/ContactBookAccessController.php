@@ -28,18 +28,34 @@ class ContactBookAccessController extends Controller
         $validated = $request->validate([
             'contact_book_ids' => 'nullable|array',
             'contact_book_ids.*' => 'exists:contact_books,id',
+            'can_delete' => 'nullable|array',
+            'can_delete.*' => 'boolean',
         ]);
 
         $bookIds = $validated['contact_book_ids'] ?? [];
+        $canDeleteFlags = $validated['can_delete'] ?? [];
 
         // Получаем дефолтную книгу пользователя и добавляем её в список, если она есть
         $defaultBook = $user->getDefaultContactBook();
-        if ($defaultBook && !in_array($defaultBook->id, $bookIds)) {
-            $bookIds[] = $defaultBook->id;
+        $defaultBookId = $defaultBook ? $defaultBook->id : null;
+        
+        if ($defaultBookId && !in_array($defaultBookId, $bookIds)) {
+            $bookIds[] = $defaultBookId;
         }
 
-        // Синхронизируем доступ к книгам
-        $user->contactBooks()->sync($bookIds);
+        // Подготавливаем данные для синхронизации с учетом can_delete
+        // Для дефолтной книги также нужно явно предоставить can_delete через админ-панель
+        $syncData = [];
+        foreach ($bookIds as $bookId) {
+            $canDelete = isset($canDeleteFlags[$bookId]) && $canDeleteFlags[$bookId] ? true : false;
+            
+            $syncData[$bookId] = [
+                'can_delete' => $canDelete,
+            ];
+        }
+
+        // Синхронизируем доступ к книгам с флагами can_delete
+        $user->contactBooks()->sync($syncData);
 
         return redirect()->route('admin.contact-books-access.index')
             ->with('success', 'Access for user "' . $user->name . '" to books has been updated successfully.');
