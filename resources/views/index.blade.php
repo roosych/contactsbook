@@ -77,20 +77,7 @@
 
             <form action="{{ route('cabinet.upload') }}" method="POST" enctype="multipart/form-data" id="uploadForm">
                 @csrf
-                
-                <div class="mb-3">
-                    <div class="form-check">
-                        <input class="form-check-input" 
-                               type="checkbox" 
-                               id="upload_is_personal" 
-                               name="is_personal" 
-                               value="1"
-                               {{ old('is_personal') ? 'checked' : '' }}>
-                        <label class="form-check-label" for="upload_is_personal">
-                            Upload as Personal Contacts (only visible to you)
-                        </label>
-                    </div>
-                </div>
+                <input type="hidden" name="is_personal" id="upload_is_personal" value="0">
                 
                     <div class="d-flex gap-2 align-items-center">
                         <div class="border border-2 border-dashed rounded p-2 flex-grow-1 d-flex align-items-center" 
@@ -104,7 +91,7 @@
                             </div>
                         </div>
                         
-                        <button type="submit" id="uploadBtn" class="btn btn-dark d-none" disabled style="white-space: nowrap;">
+                        <button type="button" id="uploadBtn" class="btn btn-dark d-none" disabled style="white-space: nowrap;" onclick="showUploadConfirmModal()">
                             <span id="uploadBtnText">Upload</span>
                             <span id="uploadBtnSpinner" class="spinner-border spinner-border-sm d-none ms-2" role="status" aria-hidden="true"></span>
                         </button>
@@ -335,25 +322,49 @@
             });
         @endif
 
-        // Handle upload form submission
-        document.getElementById('uploadForm').addEventListener('submit', function(e) {
-            const uploadBtn = document.getElementById('uploadBtn');
-            const uploadBtnText = document.getElementById('uploadBtnText');
-            const uploadBtnSpinner = document.getElementById('uploadBtnSpinner');
-
-            // Check if file is selected
+        // Функция для показа модалки подтверждения загрузки
+        function showUploadConfirmModal() {
             const fileInput = document.getElementById('vcf_file');
             if (!fileInput.files || !fileInput.files[0]) {
-                e.preventDefault();
                 alert('Please select a file to upload');
                 return;
             }
+            
+            // Показываем модалку
+            const modal = new bootstrap.Modal(document.getElementById('uploadConfirmModal'));
+            modal.show();
+        }
+
+        // Функция для подтверждения и начала загрузки
+        function confirmUpload() {
+            const fileInput = document.getElementById('vcf_file');
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select a file to upload');
+                return;
+            }
+
+            // Получаем выбранный тип книги
+            const bookType = document.querySelector('input[name="upload_book_type"]:checked').value;
+            document.getElementById('upload_is_personal').value = bookType === 'personal' ? '1' : '0';
+
+            // Закрываем модалку
+            const modal = bootstrap.Modal.getInstance(document.getElementById('uploadConfirmModal'));
+            modal.hide();
+
+            // Отправляем форму
+            const uploadForm = document.getElementById('uploadForm');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadBtnText = document.getElementById('uploadBtnText');
+            const uploadBtnSpinner = document.getElementById('uploadBtnSpinner');
 
             // Disable button and show spinner
             uploadBtn.disabled = true;
             uploadBtnText.textContent = 'Uploading...';
             uploadBtnSpinner.classList.remove('d-none');
-        });
+
+            // Submit form
+            uploadForm.submit();
+        }
         function handleFileSelect(input) {
             const uploadBtn = document.getElementById('uploadBtn');
             
@@ -764,6 +775,54 @@
             });
         }
     </script>
+
+    <!-- Upload Confirm Modal -->
+    <div class="modal fade" id="uploadConfirmModal" tabindex="-1" aria-labelledby="uploadConfirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="uploadConfirmModalLabel">Confirm Upload</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">In which book will the contacts be uploaded?</p>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" 
+                                   type="radio" 
+                                   name="upload_book_type" 
+                                   id="uploadBookPersonal" 
+                                   value="personal" 
+                                   checked>
+                            <label class="form-check-label" for="uploadBookPersonal">
+                                <strong>Personal Contacts</strong>
+                                <span class="d-block text-muted small">Only visible to you</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" 
+                                   type="radio" 
+                                   name="upload_book_type" 
+                                   id="uploadBookGroup" 
+                                   value="group">
+                            <label class="form-check-label" for="uploadBookGroup">
+                                <strong>Group Contacts</strong>
+                                <span class="d-block text-muted small">Visible to your department</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmUpload()">Confirm and Upload</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Move Contact Modal -->
     <div class="modal fade" id="moveContactModal" tabindex="-1" aria-labelledby="moveContactModalLabel" aria-hidden="true">
